@@ -87,10 +87,14 @@ jobs:
 
       - name: Init TFLint
         run: tflint --init
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Run TFLint
         working-directory: ${{ matrix.module }}
         run: tflint --config=${{ github.workspace }}/.tflint.hcl
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   tfsec:
     name: TFSec Security Scan
