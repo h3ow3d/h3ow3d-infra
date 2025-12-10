@@ -1,0 +1,113 @@
+name: PR Validation
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  validate-pr:
+    name: Validate Pull Request
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Check PR title
+        uses: amannn/action-semantic-pull-request@v5
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          types: |
+            feat
+            fix
+            docs
+            refactor
+            test
+            chore
+          requireScope: false
+
+      - name: Check for module changes
+        id: changes
+        uses: dorny/paths-filter@v2
+        with:
+          filters: |
+            networking:
+              - 'modules/networking/**'
+            ecs_cluster:
+              - 'modules/ecs-cluster/**'
+            ecs_service:
+              - 'modules/ecs-service/**'
+            cognito:
+              - 'modules/cognito/**'
+            frontend:
+              - 'modules/frontend/**'
+            monitoring:
+              - 'modules/monitoring/**'
+
+      - name: Comment on PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const changes = {
+              networking: ${{ steps.changes.outputs.networking }},
+              ecs_cluster: ${{ steps.changes.outputs.ecs_cluster }},
+              ecs_service: ${{ steps.changes.outputs.ecs_service }},
+              cognito: ${{ steps.changes.outputs.cognito }},
+              frontend: ${{ steps.changes.outputs.frontend }},
+              monitoring: ${{ steps.changes.outputs.monitoring }}
+            };
+            
+            const changedModules = Object.keys(changes)
+              .filter(key => changes[key] === 'true')
+              .map(key => `- \`${key}\``)
+              .join('\n');
+            
+            if (changedModules) {
+              const body = `## 📦 Module Changes Detected\n\n${changedModules}\n\n⚠️ These modules are consumed by h3ow3d-deployment. Please ensure backward compatibility or update deployment repository accordingly.`;
+              
+              github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: body
+              });
+            }
+
+  breaking-change-check:
+    name: Check for Breaking Changes
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check for breaking changes
+        id: check_breaking
+        run: |
+          # Check if variables were removed or renamed
+          git diff origin/main...HEAD -- '*/variables.tf' | grep -E '^\-variable' && echo "breaking=true" >> $GITHUB_OUTPUT || echo "breaking=false" >> $GITHUB_OUTPUT
+
+      - name: Comment on breaking changes
+        if: steps.check_breaking.outputs.breaking == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const body = `## ⚠️ Potential Breaking Change Detected
+            
+            This PR appears to remove or rename module variables. This is a **breaking change** that will require updates in h3ow3d-deployment.
+            
+            Please:
+            1. Document the breaking change in the PR description
+            2. Update h3ow3d-deployment repository
+            3. Consider deprecation warnings before removal
+            4. Bump the major version when merged`;
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: body
+            });

@@ -1,0 +1,180 @@
+name: Terraform Module CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  terraform-validate:
+    name: Validate Terraform Modules
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        module:
+          - modules/networking
+          - modules/ecs-cluster
+          - modules/ecs-service
+          - modules/cognito
+          - modules/frontend
+          - modules/monitoring
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.14.1
+
+      - name: Terraform Format Check
+        working-directory: ${{ matrix.module }}
+        run: terraform fmt -check -recursive
+
+      - name: Terraform Init
+        working-directory: ${{ matrix.module }}
+        run: terraform init -backend=false
+
+      - name: Terraform Validate
+        working-directory: ${{ matrix.module }}
+        run: terraform validate
+
+  tflint:
+    name: TFLint
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        module:
+          - modules/networking
+          - modules/ecs-cluster
+          - modules/ecs-service
+          - modules/cognito
+          - modules/frontend
+          - modules/monitoring
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup TFLint
+        uses: terraform-linters/setup-tflint@v4
+        with:
+          tflint_version: v0.50.0
+
+      - name: Init TFLint
+        run: tflint --init
+
+      - name: Run TFLint
+        working-directory: ${{ matrix.module }}
+        run: tflint --config=${{ github.workspace }}/.tflint.hcl
+
+  tfsec:
+    name: TFSec Security Scan
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run tfsec
+        uses: aquasecurity/tfsec-action@v1.0.3
+        with:
+          soft_fail: true
+
+  checkov:
+    name: Checkov Security Scan
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run Checkov
+        uses: bridgecrewio/checkov-action@v12
+        with:
+          directory: modules/
+          framework: terraform
+          quiet: true
+          soft_fail: true
+
+  docs:
+    name: Generate Module Documentation
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+
+      - name: Render terraform docs
+        uses: terraform-docs/gh-actions@v1.0.0
+        with:
+          working-dir: modules
+          output-file: README.md
+          output-method: inject
+          git-push: "true"
+          git-commit-message: "docs: auto-generate module documentation"
+
+  release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [terraform-validate, tflint]
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get latest tag
+        id: get_tag
+        run: |
+          LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+          echo "latest_tag=$LATEST_TAG" >> $GITHUB_OUTPUT
+          
+          # Parse version
+          VERSION=${LATEST_TAG#v}
+          IFS='.' read -r major minor patch <<< "$VERSION"
+          
+          # Increment patch version
+          NEW_PATCH=$((patch + 1))
+          NEW_TAG="v${major}.${minor}.${NEW_PATCH}"
+          echo "new_tag=$NEW_TAG" >> $GITHUB_OUTPUT
+
+      - name: Create and push tag
+        if: contains(github.event.head_commit.message, '[release]')
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a ${{ steps.get_tag.outputs.new_tag }} -m "Release ${{ steps.get_tag.outputs.new_tag }}"
+          git push origin ${{ steps.get_tag.outputs.new_tag }}
+
+      - name: Create GitHub Release
+        if: contains(github.event.head_commit.message, '[release]')
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ steps.get_tag.outputs.new_tag }}
+          release_name: Release ${{ steps.get_tag.outputs.new_tag }}
+          body: |
+            ## Changes
+            
+            ${{ github.event.head_commit.message }}
+            
+            ## Modules
+            - networking
+            - ecs-cluster
+            - ecs-service
+            - cognito
+            - frontend
+            - monitoring
+          draft: false
+          prerelease: false
