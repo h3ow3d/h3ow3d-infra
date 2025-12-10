@@ -28,9 +28,9 @@ resource "aws_ecr_lifecycle_policy" "main" {
       rulePriority = 1
       description  = "Keep last ${var.ecr_image_retention_count} images"
       selection = {
-        tagStatus     = "any"
-        countType     = "imageCountMoreThan"
-        countNumber   = var.ecr_image_retention_count
+        tagStatus   = "any"
+        countType   = "imageCountMoreThan"
+        countNumber = var.ecr_image_retention_count
       }
       action = {
         type = "expire"
@@ -83,7 +83,7 @@ resource "aws_iam_role" "task" {
 # Optional custom IAM policies for the task role
 resource "aws_iam_role_policy" "task_custom" {
   count = var.task_role_policy_json != null ? 1 : 0
-  
+
   name   = "${local.service_name}-custom-policy"
   role   = aws_iam_role.task.id
   policy = var.task_role_policy_json

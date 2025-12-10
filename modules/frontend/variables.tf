@@ -8,12 +8,6 @@ variable "environment" {
   type        = string
 }
 
-variable "domain_name" {
-  description = "Optional custom domain name for CloudFront"
-  type        = string
-  default     = ""
-}
-
 variable "acm_certificate_arn" {
   description = "Optional ACM certificate ARN for CloudFront"
   type        = string

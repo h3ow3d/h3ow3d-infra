@@ -26,7 +26,7 @@ These modules are consumed by the [h3ow3d-deployment](../h3ow3d-deployment) repo
 ```hcl
 module "networking" {
   source = "../h3ow3d-infra/modules/networking"
-  
+
   project_name       = "h3ow3d"
   environment        = "production"
   vpc_cidr           = "10.0.0.0/16"

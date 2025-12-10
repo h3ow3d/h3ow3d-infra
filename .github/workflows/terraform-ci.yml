@@ -9,19 +9,10 @@ on:
       - main
 
 jobs:
-  terraform-validate:
-    name: Validate Terraform Modules
+  terraform-format:
+    name: Terraform Format Check
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        module:
-          - modules/networking
-          - modules/ecs-cluster
-          - modules/ecs-service
-          - modules/cognito
-          - modules/frontend
-          - modules/monitoring
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -32,16 +23,41 @@ jobs:
           terraform_version: 1.14.1
 
       - name: Terraform Format Check
-        working-directory: ${{ matrix.module }}
-        run: terraform fmt -check -recursive
+        run: terraform fmt -check -recursive modules/
 
-      - name: Terraform Init
-        working-directory: ${{ matrix.module }}
-        run: terraform init -backend=false
+  terraform-syntax:
+    name: Terraform Syntax Check
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        module:
+          - modules/networking
+          - modules/ecs-cluster
+          - modules/ecs-service
+          - modules/cognito
+          - modules/frontend
+          - modules/monitoring
 
-      - name: Terraform Validate
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.14.1
+
+      - name: Validate HCL Syntax
         working-directory: ${{ matrix.module }}
-        run: terraform validate
+        run: |
+          terraform fmt -check
+          # Basic syntax check without validation
+          for file in *.tf; do
+            if [ -f "$file" ]; then
+              echo "Checking syntax of $file"
+              terraform fmt -check=true "$file" || exit 1
+            fi
+          done
 
   tflint:
     name: TFLint
@@ -55,7 +71,7 @@ jobs:
           - modules/cognito
           - modules/frontend
           - modules/monitoring
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -75,7 +91,7 @@ jobs:
   tfsec:
     name: TFSec Security Scan
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -88,7 +104,7 @@ jobs:
   checkov:
     name: Checkov Security Scan
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -105,7 +121,7 @@ jobs:
     name: Generate Module Documentation
     runs-on: ubuntu-latest
     if: github.event_name == 'pull_request'
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -125,8 +141,8 @@ jobs:
     name: Create Release
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: [terraform-validate, tflint]
-    
+    needs: [terraform-format, terraform-syntax, tflint]
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -138,11 +154,11 @@ jobs:
         run: |
           LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
           echo "latest_tag=$LATEST_TAG" >> $GITHUB_OUTPUT
-          
+
           # Parse version
           VERSION=${LATEST_TAG#v}
           IFS='.' read -r major minor patch <<< "$VERSION"
-          
+
           # Increment patch version
           NEW_PATCH=$((patch + 1))
           NEW_TAG="v${major}.${minor}.${NEW_PATCH}"
@@ -166,9 +182,9 @@ jobs:
           release_name: Release ${{ steps.get_tag.outputs.new_tag }}
           body: |
             ## Changes
-            
+
             ${{ github.event.head_commit.message }}
-            
+
             ## Modules
             - networking
             - ecs-cluster

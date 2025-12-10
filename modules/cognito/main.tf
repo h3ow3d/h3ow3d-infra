@@ -66,8 +66,8 @@ resource "aws_cognito_user_pool_client" "web" {
   allowed_oauth_flows                  = ["implicit"]
   allowed_oauth_scopes                 = ["openid", "email", "profile"]
 
-  supported_identity_providers = ["Google"]
-  generate_secret              = false
+  supported_identity_providers  = ["Google"]
+  generate_secret               = false
   prevent_user_existence_errors = "ENABLED"
 
   id_token_validity      = 60

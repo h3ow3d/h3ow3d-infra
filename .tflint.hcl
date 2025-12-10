@@ -1,11 +1,11 @@
 config {
-  module = true
-  force = false
+  call_module_type = "all"
+  force            = false
 }
 
 plugin "aws" {
   enabled = true
-  version = "0.29.0"
+  version = "0.35.0"
   source  = "github.com/terraform-linters/tflint-ruleset-aws"
 }
 
